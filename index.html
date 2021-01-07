@@ -1,1 +1,363 @@
-Hello world
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="X-UA-Compatible" content="ie=edge" />
+  <title>Coding Train: Data and APIs Project 1</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@2.8.0"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-cdzt@0.3.0/dist/cdzt.js"></script>
+</head>
+
+<body>
+  <h1>Corona Virus Charts</h1>
+  <div id="container"></div>
+  <br>
+  <canvas id="myChart" width="400" height="150"></canvas>
+
+  <div id="stateComparison"></div>
+  <br>
+  <canvas id="comparisonChart" width="400" height="150"></canvas>
+
+  <script>
+    const ChartModule = (function () {
+
+      let myMap = new Map();
+      let rollingAverages = new Map();
+      var chart = null;
+
+      //Map of statistics to a tuple of [Statistic Name, Display Rolling Average]
+      const stats = {
+        date: ["Date", false],
+        positiveIncrease: ["New Positive Case", true],
+        recovered: ["Recovered", false],
+        negativeIncrease: ["Negative Tests", true],
+        positive: ["Cummulative Positive Cases", false],
+        negative: ["Cummulative Negative Tests", false],
+        hospitalizedCurrently: ["Hospitalized Currently", false],
+        inIcuCurrently: ["In ICU Currently", false],
+        onVentilatorCurrently: ["On Ventilator Currently", false],
+        death: ["Total Deaths", false],
+        deathIncrease: ["New Deaths", true],
+        totalTestResultsIncrease: ["New Test Results", true],
+        totalTestResults: ["Total Test Results", false],
+        percentPositive: ["Percent Positivity", true]
+      };
+
+      const states = {
+        US: 'United States', al: 'Alabama', ak: 'Alaska', az: 'Arizona', ar: 'Arkansas', ca: 'California', co: 'Colorado',
+        ct: 'Connecticut', de: 'Delaware', dc: 'District of Columbia D.C.', fl: 'Florida', ga: 'Georgia',
+        hi: 'Hawaii', id: 'Idaho', il: 'Illinois', in: 'Indiana', ia: 'Iowa', ks: 'Kansas', ky: 'Kentucky',
+        la: 'Louisiana', me: 'Maine', md: 'Maryland', ma: 'Massachusetts', mi: 'Michigan', mn: 'Minnesota',
+        ms: 'Mississippi', mo: 'Missouri', mt: 'Montana', ne: 'Nebraska', nv: 'Nevada', nh: 'New Hampshire',
+        nj: 'New Jersey', nm: 'New Mexico', ny: 'New York', nc: 'North Carolina', nd: 'North Dakota',
+        oh: 'Ohio', ok: 'Oklahoma', or: 'Oregon', pa: 'Pennsylvania', ri: 'Rhode Island', sc: 'South Carolina',
+        sd: 'South Dakota', tn: 'Tennessee', tx: 'Texas', ut: 'Utah', vt: 'Vermont', va: 'Virginia',
+        wa: 'Washington', wv: 'West Virginia', wi: 'Wisconsin', wy: 'Wyoming'
+      }
+
+      function getTimeLine() {
+        var radios = document.getElementsByName('scale');
+        for (i = 0; i < radios.length; i++) {
+          if (radios[i].checked) {
+            return radios[i].value;
+          } 
+        }
+        return 0;
+      }
+
+      function drawChart() {
+        var state = document.getElementById("state-id");
+        var statistic = document.getElementById("stat-keys");
+        var label = statistic.options[statistic.selectedIndex].innerHTML;
+
+        drawChartImpl(chart, state.value, label, statistic.value)
+      }
+
+      async function updateState() {
+        await getJson(this.value);
+        drawChart();
+      }
+
+      function createStateDropdown() {
+        var s1 = document.createElement("select");
+        s1.name = "states";
+        s1.id = "state-id";
+
+        for (const [key, val] of Object.entries(states)) {
+          var option = document.createElement("option");
+          option.value = key;
+          option.text = val;
+          s1.appendChild(option);
+        }
+
+        s1.value = 'il';
+        s1.addEventListener("change", updateState);
+
+        var label = document.createElement("state-label");
+        label.innerHTML = "States: "
+        label.htmlFor = "states";
+
+        document.getElementById("container").appendChild(label).appendChild(s1);
+      }
+
+      function createStatisticDropdown() {
+
+        var select = document.createElement("select");
+        select.name = "stat-keys";
+        select.id = "stat-keys";
+
+        for (const [key, val] of Object.entries(stats)) {
+          if (key == 'date')
+            continue;
+          var option = document.createElement("option");
+          option.value = key;
+          option.text = val[0];
+          select.appendChild(option);
+        }
+
+        select.addEventListener("change", drawChart);
+
+        var label = document.createElement("label");
+        label.innerHTML = "Key: "
+        label.htmlFor = "keys";
+
+        document.getElementById("container").appendChild(label).appendChild(select);
+
+      }
+
+      function createTimelineRadioButton() {
+        var newRadio1 = document.createElement('input'); 
+        newRadio1.type = 'radio';
+        newRadio1.name = 'scale';
+        newRadio1.value = 1;
+        newRadio1.checked = true;
+        newRadio1.addEventListener("change", drawChart);
+        document.getElementById("container").appendChild(newRadio1);
+
+        var radioLabel1 = document.createElement("label");
+        radioLabel1.innerHTML = 'Last 3 Months';
+        document.getElementById("container").appendChild(radioLabel1);
+
+        var newRadio2 = document.createElement('input'); 
+        newRadio2.type = 'radio';
+        newRadio2.name = 'scale';
+        newRadio2.value = 2;
+        newRadio2.addEventListener("change", drawChart);
+        document.getElementById("container").appendChild(newRadio2);
+
+        var radioLabel2 = document.createElement("label");
+        radioLabel2.innerHTML = "Last Month";
+        document.getElementById("container").appendChild(radioLabel2);
+
+        var newRadio3 = document.createElement('input'); 
+        newRadio3.type = 'radio';
+        newRadio3.name = 'scale';
+        newRadio3.value = 3;
+        newRadio3.addEventListener("change", drawChart);
+        document.getElementById("container").appendChild(newRadio3);
+
+        var radioLabel3 = document.createElement("label");
+        radioLabel3.innerHTML = "All Time";
+        document.getElementById("container").appendChild(radioLabel3);
+      }
+
+      function initializeChart() {
+        const ctx = document.getElementById('myChart').getContext('2d');
+        chart = new Chart(ctx, { type: 'line' ,
+          plugins: [cdzt.default]
+        });
+      }
+
+      function getDataSet(ds) {
+        timeline = getTimeLine();
+        if (timeline == 1) {
+          return ds.slice(Math.max(ds.length - 90, 0));
+        } else if (timeline == 2) {
+          return ds.slice(Math.max(ds.length - 30, 0));
+        } else {
+          return ds;
+        }
+      }
+
+      function drawChartImpl(chart, state, label, key) {      
+        stateMap = myMap.get(state);
+        raMap = rollingAverages.get(state);
+
+        chart.data.labels = [];
+        chart.data.labels = getDataSet(stateMap.get('date'));
+
+        chart.data.datasets = [];
+        chart.data.datasets = [
+          {
+            label: label,
+            data: getDataSet(stateMap.get(key)),
+            fill: false,
+            borderColor: 'rgba(255, 0, 0, 1)',
+            backgroundColor: 'rgba(255, 199, 132, 0.5)',
+            foregroundColor: 'rgba(0, 255, 0, 0.5)',
+            borderWidth: 1
+          }
+        ];
+
+        // Add rolling average to appropriate statistics
+        if (stats[key][1]) {
+          chart.data.datasets.push(
+            {
+              label: '7 Day Rolling Average',
+              data: getDataSet(raMap.get(key)),
+              fill: false,
+              borderColor: 'rgba(0, 0, 255, 1)',
+              backgroundColor: 'rgba(255, 199, 132, 0.5)',
+              foregroundColor: 'rgba(0, 255, 0, 0.5)',
+              borderWidth: 1
+            });
+        }
+
+        chart.update();
+      }
+
+      function calculateAdditionalStats(stateMap) {
+        positiveTests = stateMap.get('positiveIncrease');
+        totalTests = stateMap.get('totalTestResultsIncrease');
+ 
+        stateMap.set('percentPositive', []);
+        percentPositive = stateMap.get('percentPositive');
+
+        var i;
+        for (i = 0; i < Math.min(positiveTests.length, totalTests.length); i++) {
+          if (totalTests[i] < 500)
+            percentPositive.push(0);
+          else
+            percentPositive.push((positiveTests[i] / totalTests[i]) * 100);
+        }
+        console.log(percentPositive);
+
+      }
+
+      function calculateRollingAverages(state, stateMap) {
+        if (rollingAverages.has(state)) {
+          return;
+        }
+        rollingAverages.set(state, new Map());
+        ra = rollingAverages.get(state);
+
+        for (const [key, value] of stateMap.entries()) {
+
+          if (!ra.has(key)) {
+            ra.set(key, []);
+          }
+          var entry = ra.get(key);
+
+          var index = 0;
+          for (index = 0; index < value.length; index++) {
+            if (index < 6) {
+              entry.unshift(null);
+              continue;
+            }
+
+            var i;
+            var accum = 0;
+            for (i = index - 6; i <= index; i++) {
+              accum = accum + value[i];
+            }
+            var avg = accum / 7;
+            avg = Math.round((avg + Number.EPSILON) * 100) / 100;
+            entry.push(avg);
+          }
+        } 
+      }
+
+      function addDataset(chart, label, key) {
+        chart.data.datasets.push(
+          {
+            label: label,
+            data: myMap.get(key),
+            fill: false,
+            borderColor: 'rgba(255, 0, 0, 1)',
+            backgroundColor: 'rgba(255, 199, 132, 0.5)',
+            foregroundColor: 'rgba(0, 255, 0, 0.5)',
+            borderWidth: 1
+          }
+        );
+
+        console.log(chart.options);
+        chart.options.scales.yAxes[0].type = 'logarithmic';
+        chart.options.scales.yAxes[0].position = 'right';
+        chart.options.scales.yAxes[0].ticks.maxTicksLimit = 5;
+
+
+        chart.update();
+      }
+
+      async function getJson(state) {
+        var us_url = 'https://api.covidtracking.com/v1/us/daily.json'
+        var state_url = 'https://api.covidtracking.com/v1/states/XXX/daily.json'
+
+        //var us_url = 'https://covidtracking.com/api/v1/us/daily.json'
+        //var state_url = 'https://covidtracking.com/api/v1/';
+
+        if (state == 'US') {
+          api_url = us_url; 
+        } else {
+          api_url = state_url.replace('XXX', state);
+        }
+
+        const response = await fetch(api_url, {mode: 'cors'});
+        const data = await response.json();
+
+        if (myMap.has(state)) {
+          return;
+        }
+
+        myMap.set(state, new Map());
+        stateMap = myMap.get(state);
+
+        data.forEach(row => {
+          for (const k of Object.keys(stats)) {
+            if (k in row) {
+              if (!stateMap.has(k)) {
+                stateMap.set(k, []);
+              }
+              stateMap.get(k).unshift(row[k]);
+            }
+          }
+        });
+
+        calculateAdditionalStats(stateMap);
+        calculateRollingAverages(state, stateMap);
+
+        return;
+      }
+
+      async function Initialize() {
+        await getJson('il');
+
+        createStateDropdown();
+        var label = document.createElement("label");
+        label.innerHTML = "&nbsp&nbsp&nbsp";
+        document.getElementById('container').appendChild(label);
+        createStatisticDropdown();
+        var label1 = document.createElement("label");
+        label1.innerHTML = "&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp";
+        document.getElementById('container').appendChild(label1);
+        createTimelineRadioButton();
+
+        initializeChart();
+        drawChart();
+      }
+
+      // Public Chart Module Interface
+      return {
+        Initialize: Initialize,
+      };
+
+    })();
+
+    window.addEventListener('load', ChartModule.Initialize);
+
+  </script>
+</body>
+
+</html>
